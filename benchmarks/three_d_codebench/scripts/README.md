@@ -45,7 +45,7 @@ Use `THREED_GENERATION_ONLY=1` to separate generation and scoring allocations.
 Task selection is `all` by default; text/image selections filter before the limit.
 Reuse the exact generation command/output to resume partial work. Scripts do not
 resubmit themselves. Completed runs are no-ops; concurrent writers are rejected.
-Default GPU jobs use four GPUs, TP=4, 64 concurrent episodes, 131072 context,
+Default GPU jobs use four GPUs, TP=4, 16 concurrent episodes, 131072 context,
 50 build steps, an eight-image request cap, and a four-hour generation allocation.
 Mounts default to the explicit data, reference, clone, checkpoint, output, and
 optional cache paths. `THREED_CONTAINER_MOUNTS` can supply extra mounts, including

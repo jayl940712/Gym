@@ -82,7 +82,7 @@ uv run gym eval run --no-serve --resume --config 3dcodebench-local.yaml \
   --agent three_d_codebench_agent \
   --input data/three_d_codebench/smoke-5-each.jsonl \
   --output results/3dcodebench-smoke/rollouts_generation.jsonl \
-  --num-repeats 1 --concurrency 64
+  --num-repeats 1 --concurrency 16
 ```
 
 Use `benchmark.jsonl` for all 424 tasks, `text_to_3d.jsonl` for text only, or
