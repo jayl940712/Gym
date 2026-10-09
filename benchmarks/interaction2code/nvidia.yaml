@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+config_paths:
+- benchmarks/interaction2code/config.yaml
+- responses_api_models/vllm_model/configs/vllm_model.yaml
+policy_base_url: https://inference-api.nvidia.com/v1
+policy_api_key: ${oc.env:NVINFERENCE_API_KEY}
+policy_model_name: nvidia/nvidia/nemotron-3.5-super-vl
+policy_model:
+  responses_api_models:
+    vllm_model:
+      # NVIDIA aliases reasoning to reasoning_content and rejects sending both.
+      reasoning_field: reasoning_content

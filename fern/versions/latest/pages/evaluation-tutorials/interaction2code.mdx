@@ -1,0 +1,180 @@
+---
+title: "Interaction2Code with OpenCode"
+description: "Reconstruct interactive webpages from screenshot pairs with OpenCode and native visual metrics."
+---
+
+# Interaction2Code with OpenCode
+
+[Interaction2Code](https://github.com/WebPAI/Interaction2Code) evaluates interactive
+webpage reconstruction from screenshots taken before and after an interaction.
+Gym runs one independent OpenCode episode per numbered interaction. The agent
+writes a self-contained HTML/CSS/JavaScript page; Firefox clicks `interact1` and
+captures the resulting full-page screenshots. Trusted scoring preserves the
+upstream full-page and interaction metrics.
+
+The integration is standalone: an Interaction2Code checkout is not required.
+You can delete the sibling Interaction2Code directory. A new user needs only a
+Gym checkout containing this integration and the setup below; no files, Python
+packages, or prepared caches from that sibling repository are used.
+Preparation downloads assets directly from the pinned Hugging Face revision
+`7a2d55fe666ddd319d26bdcb1dddb01c764a8602`. Metric behavior follows source revision
+`29d8af1572888d33b028ef001dc8452f9e88497b`. Prompts, rendering, scoring, dependencies,
+and configuration live in Gym.
+
+## Prepare the full dataset
+
+Start from the Gym checkout root with `uv`, a running Docker daemon, and network
+access. Install Gym and activate its environment:
+
+```bash
+uv sync --extra dev --extra sandbox
+source .venv/bin/activate
+```
+
+Then download the benchmark data and build the agent/browser image using only
+files from this checkout:
+
+```bash
+python -m benchmarks.interaction2code.prepare
+docker build -f benchmarks/interaction2code/Dockerfile \
+  -t interaction2code-opencode:1.17.11 .
+```
+
+Preparation validates the required images for every interaction and writes
+`benchmarks/interaction2code/data/interaction2code_benchmark.jsonl`, task inputs,
+private reference annotations, and a manifest with revisions, counts and hashes.
+The pinned full release contains **127 pages and 375 numbered interactions**;
+the published description says 374. Gym includes all validated entries and records
+that discrepancy. The upstream GitHub sample contains only pages 101–127, totaling
+155 interactions; it is not the full evaluation set.
+
+`--limit 2` prepares the first two pages for a small development run. The committed
+five-task `example.jsonl` spans several pages and requires full preparation.
+Gym provisions a separate Python 3.12 scoring environment automatically at agent
+startup, including the CLIP and EasyOCR weights. It does not install these large
+metric dependencies into Gym's core Python environment. To provision it early:
+
+```bash
+python -c 'from pathlib import Path; from responses_api_agents.interaction2code_agent.runtime import ensure_runtime; ensure_runtime(Path("benchmarks/interaction2code/.cache/scorer"))'
+```
+
+The upstream code and dataset do not declare licenses in the pinned release.
+Reference screenshots and annotations are downloaded to ignored local storage.
+The upstream solid-blue `placeholder.jpg` is bundled so preparation does not
+require the upstream code repository. Attribution and provenance are recorded
+in the preparation manifest.
+
+## Connect NVIDIA inference and run
+
+Export `NVINFERENCE_API_KEY` in the launching shell. If it is set in `.bashrc`,
+load that environment first. The NVIDIA preset uses
+`https://inference-api.nvidia.com/v1/chat/completions` and model
+`nvidia/nvidia/nemotron-3.5-super-vl`. The secret is read from the environment;
+it is not written into the committed configuration or task containers.
+
+```bash
+gym env start --config benchmarks/interaction2code/nvidia.yaml
+
+# In another terminal, with the same environment:
+gym eval run --no-serve --config benchmarks/interaction2code/nvidia.yaml \
+  --agent interaction2code_agent \
+  --input benchmarks/interaction2code/example.jsonl \
+  --output results/interaction2code/smoke.jsonl --num-repeats 1 --concurrency 4
+
+gym eval run --no-serve --config benchmarks/interaction2code/nvidia.yaml \
+  --agent interaction2code_agent \
+  --input benchmarks/interaction2code/data/interaction2code_benchmark.jsonl \
+  --output results/interaction2code/rollouts.jsonl --num-repeats 1 --concurrency 4
+```
+
+The preset uses Gym's existing Chat Completions model adapter. It selects only
+`reasoning_content` when replaying assistant history because NVIDIA rejects
+requests containing both reasoning aliases. Other endpoints can use
+`config.yaml` with their own model-server configuration.
+
+Budgets follow BenchCAD: OpenCode 1.17.11, 131,072-token context, 50 steps, one-hour
+execution and model-call timeouts, concurrency four, two CPUs and 8 GiB maximum
+memory per sandbox. Automatic compaction is disabled. The output-token policy
+uses the remaining context rather than the greeting test's 1,024-token cap.
+The prepared tasks use temperature 0.7 and the benchmark uses one repeat.
+Native scoring defaults to two concurrent processes, separately from the four
+OpenCode episodes, with two Torch threads each (`scoring_threads`), to bound
+CLIP/EasyOCR memory on a 16 GiB CPU host while using four CPU cores. Shared
+file locks enforce this limit across scoring processes using the same cache;
+`scoring_concurrency` can be raised on hosts with more memory.
+Ensure the inference endpoint supports the configured context, images and tools.
+
+## Prompt and execution protocol
+
+The agentic direct prompt asks OpenCode to inspect `before.png` and `after.png`,
+infer the interaction, write `/workspace/index.html`, and optionally render and
+inspect previews. It preserves the upstream requirements for exact text, repeated
+elements, embedded CSS/JavaScript, `interact1`, and `placeholder.jpg`. It does not
+provide textual action descriptions, marked inputs, original-site URLs or crops.
+Reference annotation boxes and interaction crops are used only by the scorer.
+
+The agent and verification browser run in separate disposable containers.
+The verification container receives only the generated HTML and placeholder.
+Trusted scoring reads its downloaded screenshots and private annotations; it
+never executes generated HTML. Browser viewport dimensions are set from the
+reference screenshot rather than depending on a host desktop's maximize behavior.
+
+## Native scores and diagnostics
+
+Each result preserves `full_page` metrics (CLIP, OCR/BLEU, SSIM), `interaction`
+metrics (the same three plus position before/after interaction), and the upstream
+visual-change `interaction_flag`. Gym's scalar reward is the native interaction
+CLIP similarity; it is not a new combined score or binary correctness judgment.
+The flag detects rendered visual changes and does not establish full functional
+correctness.
+
+Scoring retains upstream character-level BLEU, null OCR scores when only one image
+has text, first-red-contour positioning, exclusive crop bounds, and full-page CLIP
+even when the interaction flag is false. The unequal-height crop branch uses
+`git diff --no-index`, fixing upstream's dependency on untracked CSVs in a Git
+worktree while retaining its coordinate rules.
+
+Missing HTML, unchanged pages, generated JavaScript alerts that prevent capture,
+and exhausted agent/browser budgets receive zero
+interaction reward. Infrastructure and metric failures are marked `mask_sample`;
+report and resolve them separately. Do not silently exclude missing rollouts.
+Artifacts include input, Gym response, generated HTML, initial/clicked screenshots,
+changed-region crop, browser diagnostics, scorer stderr, metrics and OpenCode export.
+
+Generate a coverage-checked native summary after the full one-repeat run:
+
+```bash
+python -m benchmarks.interaction2code.report \
+  --rollouts results/interaction2code/rollouts.jsonl \
+  --output results/interaction2code/summary.json --require-complete
+```
+
+This reports all eight metric means and denominators, null OCR counts, statuses,
+missing or duplicate IDs, and masked infrastructure failures. The command fails
+the completeness check until every expected interaction has one unmasked result.
+Successful infrastructure retries retain `infrastructure_retry` metadata and are
+counted separately, so recovered failures remain visible in the summary.
+
+Component tests run with `gym env test +entrypoint=responses_api_agents/interaction2code_agent`.
+Run metric tests in their separate provisioned interpreter:
+
+```bash
+uv --no-config pip install --python benchmarks/interaction2code/.cache/scorer/.venv/bin/python pytest
+benchmarks/interaction2code/.cache/scorer/.venv/bin/pytest benchmarks/interaction2code/tests
+```
+
+An optional parity audit compares a scored episode with all eight pinned upstream
+metric functions, downloading source solely for this development check:
+
+```bash
+I2C_MODEL_CACHE="$PWD/benchmarks/interaction2code/.cache/scorer/models" \
+  benchmarks/interaction2code/.cache/scorer/.venv/bin/python \
+  benchmarks/interaction2code/verify_upstream.py \
+  --artifacts /absolute/path/to/scored/episode \
+  --output results/interaction2code/native-parity.json
+```
+
+Report this protocol as **interaction2code-opencode**. Iterative tool use and the
+deterministic browser viewport make it distinct from the upstream single-response
+leaderboard. This evaluation adapter does not provide training token IDs or log
+probabilities.

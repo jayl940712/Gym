@@ -1,0 +1,12 @@
+# Separate Python 3.12 runtime; upstream metric libraries, with CPU-compatible pins.
+numpy==2.2.6
+Pillow==11.3.0
+torch==2.8.0
+torchvision==0.23.0
+openai-clip==1.0.1
+easyocr==1.7.2
+opencv-python-headless==4.12.0.88
+scikit-image==0.25.2
+nltk==3.9.1
+# The upstream CLIP package imports pkg_resources.packaging.
+setuptools==69.5.1
