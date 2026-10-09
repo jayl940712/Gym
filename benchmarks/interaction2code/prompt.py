@@ -2,35 +2,33 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Interaction2Code direct task, expressed for a file-writing coding agent."""
 
-DIRECT_PROMPT = """You are a web developer proficient in HTML, CSS and JavaScript.
-Reconstruct an interactive webpage from /workspace/before.png and /workspace/after.png.
-Read both images with your image-capable read tool before coding. The first shows the
-original state; the second shows the state after interacting with an element. Infer
-the interaction from their differences. Match the original layout, design, exact
-text, fonts, colors, padding, margins, and repeated elements. Implement the changes
-observed in the second image on the appropriate interactive element.
+DIRECT_PROMPT = """Reconstruct the interactive webpage shown in /workspace/before.png and
+/workspace/after.png. Read both images with your image-capable read tool before coding.
+Infer the interaction that changes the first state into the second and implement it.
+Aim for a near-exact visual copy of both states: match layout, placement, dimensions,
+spacing, fonts, colors, text, and all visible elements. Do not reproduce annotation boxes.
 
-Create /workspace/index.html with all HTML, CSS and JavaScript embedded in that one
-file. Set the interactive element's id to interact1, for example
-<button id="interact1">Click Me!</button>. The evaluator will click that element.
-Use /workspace/placeholder.jpg for every image in the reconstructed page, with
-dimensions matching the screenshots. Do not depend on other files or remote assets.
-Write the complete page; do not substitute comments or ellipses for repeated content.
-End the HTML document with </html>. Do not reproduce annotation boxes.
+Save the complete page as /workspace/index.html with HTML, CSS, and JavaScript embedded.
+Give the element that triggers the interaction the id interact1. Use the relative URL
+placeholder.jpg for every image, sized to match the references. Do not depend on other
+files or remote assets, omit repeated content, or replace the interaction with a static
+after image. End the document with </html>.
 
-You may use your coding tools to edit and test the page iteratively. Firefox and
-Selenium are installed. For a local preview, run:
-python /opt/interaction2code/render.py --html /workspace/index.html \\
-  --output /workspace/preview --width {width} --height {height}
-This writes the initial and clicked full-page screenshots and diagnostics. You can
-read those images to check your implementation and revise it within your budget.
-Work from the provided images only. Do not visit or search for the original website.
-The deliverable is the saved /workspace/index.html file; your final message can be
-a brief completion note. Private reference annotations and metrics are unavailable
-during coding.
+Firefox, Selenium, and Python Playwright with headless Chromium are installed. Serve
+the page with a local HTTP server in the background and use Playwright or Selenium to
+open it and perform the interaction. To keep the server alive between tool calls,
+detach it with setsid and redirect stdin, stdout, and stderr, for example:
+setsid python3 -m http.server 8080 --directory /workspace > /tmp/server.log 2>&1 < /dev/null &
+Determine the browser viewport from the input image dimensions. Capture screenshots of
+both the initial state and the state after the interaction. Read both screenshots with
+your image-capable read tool and compare them visually with the references. Refine the
+implementation and repeat until both states match as closely as possible visually.
+
+Work only from the provided images; do not visit or search for the original website.
+Your deliverable is the saved /workspace/index.html file.
 """
 
 
-def build_prompt(*, width: int, height: int) -> str:
-    """Use the reference image dimensions for deterministic browser previews."""
-    return DIRECT_PROMPT.format(width=width, height=height)
+def build_prompt() -> str:
+    """Return the task instructions; the agent infers the viewport from its images."""
+    return DIRECT_PROMPT

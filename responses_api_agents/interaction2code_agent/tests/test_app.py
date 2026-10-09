@@ -219,6 +219,7 @@ async def test_render_sandbox_never_receives_reference_images(agent, body, monke
             assert result["status"] == "browser_error"
             assert result["mask_sample"] is False
     assert [call.args[1] for call in sandbox.upload.await_args_list] == [
+        "/opt/interaction2code/render.py",
         "/workspace/index.html",
         "/workspace/placeholder.jpg",
     ]

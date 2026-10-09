@@ -116,6 +116,8 @@ class Interaction2CodeAgent(OpenCodeSandboxedAgent):
     async def _grade(self, directory: Path, artifacts: Path, metadata: dict) -> dict:
         sandbox = await self._start_sandbox()
         try:
+            # Provision browser capture only after coding, in a separate sandbox.
+            await sandbox.upload(Path(__file__).with_name("render.py"), "/opt/interaction2code/render.py")
             await sandbox.upload(artifacts / "index.html", "/workspace/index.html")
             await sandbox.upload(directory / "placeholder.jpg", "/workspace/placeholder.jpg")
             result = await sandbox.exec(

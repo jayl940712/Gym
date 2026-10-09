@@ -108,7 +108,7 @@ def export(*, source: Path, output: Path, pages: list[int], placeholder: Path) -
                     "interaction_id": int(interaction_id),
                     "task_id": record_id,
                     "responses_create_params": {
-                        "input": [{"role": "user", "content": build_prompt(width=width, height=height)}],
+                        "input": [{"role": "user", "content": build_prompt()}],
                         "temperature": 0.7,
                     },
                 }

@@ -29,7 +29,7 @@ interaction2code_agent:
       network_access: inherit
       token_id_capture: false
       sandbox_config:
-        image: interaction2code-opencode:1.17.11
+        image: interaction2code-opencode:1.17.11-browser-v2
         workdir: /workspace
         ttl_s: 7200
         ready_timeout_s: 600

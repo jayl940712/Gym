@@ -37,7 +37,7 @@ files from this checkout:
 ```bash
 python -m benchmarks.interaction2code.prepare
 docker build -f benchmarks/interaction2code/Dockerfile \
-  -t interaction2code-opencode:1.17.11 .
+  -t interaction2code-opencode:1.17.11-browser-v2 .
 ```
 
 Preparation validates the required images for every interaction and writes
@@ -107,14 +107,23 @@ Ensure the inference endpoint supports the configured context, images and tools.
 ## Prompt and execution protocol
 
 The agentic direct prompt asks OpenCode to inspect `before.png` and `after.png`,
-infer the interaction, write `/workspace/index.html`, and optionally render and
-inspect previews. It preserves the upstream requirements for exact text, repeated
+infer the interaction, write `/workspace/index.html`, serve it locally, and write
+its own Playwright or Selenium automation to interact with the page. The prompt
+asks it to capture both states, read its screenshots with the image tool, and
+compare them visually with the references, refining layout and behavior through
+repeated captures and visual inspection. Firefox, Selenium, and Python Playwright with headless Chromium are installed;
+no browser-capture script or scoring code is supplied to the coding agent.
+It preserves the upstream requirements for exact text, repeated
 elements, embedded CSS/JavaScript, `interact1`, and `placeholder.jpg`. It does not
 provide textual action descriptions, marked inputs, original-site URLs or crops.
 Reference annotation boxes and interaction crops are used only by the scorer.
 
 The agent and verification browser run in separate disposable containers.
-The verification container receives only the generated HTML and placeholder.
+The verification container receives the generated HTML, placeholder, and a
+Gym-owned capture script uploaded after coding finishes. That script is absent
+from the shared image and the coding container. Rebuild the image with the new
+`1.17.11-browser-v2` tag before using the revised prompt; the older image includes
+the capture script and lacks Playwright.
 Trusted scoring reads its downloaded screenshots and private annotations; it
 never executes generated HTML. Browser viewport dimensions are set from the
 reference screenshot rather than depending on a host desktop's maximize behavior.
