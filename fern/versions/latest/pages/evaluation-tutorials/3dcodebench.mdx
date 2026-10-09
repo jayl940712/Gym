@@ -1,0 +1,26 @@
+---
+title: 3DCodeBench with OpenCode
+---
+
+Gym contains the 3DCodeBench metric implementations, Blender rendering/export
+helpers, prompts, and Uni3D inference encoder. An external 3DCodeBench repository
+is not needed. From a fresh clone, install Gym, run the included dataset downloader,
+build or select a compatible Blender/OpenCode sandbox image, prepare references,
+and run the standard Gym evaluation commands.
+
+The complete executable setup and configuration examples are in
+[the benchmark README](https://github.com/jayl940712/Gym/blob/3dcodebench-opencode/benchmarks/three_d_codebench/README.md).
+All paths are configurable independently; no shared workspace layout is required.
+
+Text-to-3D scores descriptions against generated renders using SigLIP2 and against
+generated point clouds using Uni3D. Image-to-3D scores reference images against
+generated renders using SigLIP2 and against generated point clouds using Uni3D.
+Both retain executability, failure taxonomy, Chamfer, and reference-shape Uni3D.
+DINOv3 is an additional reference-image diagnostic, supplementary on text tasks.
+The text scorer uses the original dataset description, not agent workflow instructions.
+
+The final Gym reward uses the task-specific native SigLIP2 mean. This is an agentic
+OpenCode protocol; report text and image results separately. Failed predictions
+remain in native penalized aggregates. Infrastructure-masked rows are counted
+separately. Dataset assets and gated model weights require download/access during
+setup, but no external benchmark source checkout is downloaded.

@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+config_paths:
+- nemo_gym/sandbox/providers/docker/configs/docker.yaml
+three_d_codebench_agent:
+  responses_api_agents:
+    three_d_codebench_agent:
+      entrypoint: app.py
+      domain: agent
+      description: Sandboxed OpenCode Blender generation with native 3DCodeBench verification
+      model_server:
+        type: responses_api_models
+        name: policy_model
+      concurrency: 4
+      dataset_root: ${oc.env:THREED_DATASET,data/three_d_codebench}
+      results_dir: results/three_d_codebench/artifacts
+      artifacts_dir: results/three_d_codebench/opencode
+      opencode_version: 1.17.11
+      opencode_max_context_window: 131072
+      opencode_model_call_timeout: 3600000
+      preinstalled_opencode: true
+      output_token_policy: remaining_context
+      sandbox_timeout: 1800
+      execution_timeout: 300
+      sandbox_provider: sandbox
+      network_access: inherit
+      token_id_capture: false
+      sandbox_config:
+        image: ${oc.env:THREED_TASK_IMAGE,3dcodebench-runtime:latest}
+        workdir: /workspace
+        ready_timeout_s: 600
+        env:
+          PATH: /usr/local/bin:/usr/bin:/bin
+          BLENDER: /usr/bin/blender
+          OMP_NUM_THREADS: '2'
+          OPENBLAS_NUM_THREADS: '1'
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          OPENCODE_DISABLE_SHARE: '1'
+          OPENCODE_DISABLE_MODELS_FETCH: 'true'
+      opencode_config:
+        provider:
+          nemo_gym:
+            models:
+              dummy_model:
+                modalities:
+                  input: [text, image]
+                  output: [text]
+        compaction:
+          auto: false
+        agent:
+          build:
+            steps: 50
+          title:
+            disable: true
+        permission:
+          '*': allow
+          webfetch: deny
+          websearch: deny
+          task: deny
+three_d_codebench_environment_server:
+  environment_servers:
+    legacy_agent:
+      entrypoint: app.py
+      agent_server:
+        type: responses_api_agents
+        name: three_d_codebench_agent

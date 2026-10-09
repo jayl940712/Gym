@@ -1,0 +1,62 @@
+{
+  "metrics/executability.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/executability.py",
+    "original_sha256": "58dc273fa1d390f1cc507774e7a64f10b6d04bd39158e2dfceaa4722f10b9a48"
+  },
+  "metrics/failure_taxonomy.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/failure_taxonomy.py",
+    "original_sha256": "8a20c25981085242b9f8b8a5b07b0250f30d2f48e29334f81206aad9540923ae"
+  },
+  "metrics/image_similarity.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/image_similarity.py",
+    "original_sha256": "e531e0aec54f390b7e47b38724bfe88f0d2c8797e712660e96c6816adebe37b4"
+  },
+  "metrics/shape_chamfer.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/shape_chamfer.py",
+    "original_sha256": "598f23abbb6fdc776f52edb771c7137e40146686f60b2d22f9ad8317a11cb2ec"
+  },
+  "metrics/shape_uni3d.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/shape_uni3d.py",
+    "original_sha256": "a2a4d9493dbbd4a7354cb7c63d2fc9c156d3797013fbe8c7412830458503b985"
+  },
+  "metrics/text_image_similarity.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "metrics/text_image_similarity.py",
+    "original_sha256": "00e1b1aedf91cd5eb4f563f00851e7eed1d88b5dbdaa732a59184ec90a9d91df"
+  },
+  "runtime/render.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "core/render.py",
+    "original_sha256": "0b026a835e385338b396604ccb48d2555ff3ef74786cb4ba80ff83f78fbc1934"
+  },
+  "runtime/export_glb.py": {
+    "repository": "https://github.com/gaoypeng/3dcodebench",
+    "revision": "42c7780ed3fcbd466f17f058f62e7996233777f7",
+    "path": "core/export_glb.py",
+    "original_sha256": "25a743fa50a42b762484e0e3d8809a60fa5ab31375fb50bb5e41261b8e36c478"
+  },
+  "metrics/uni3d/point_encoder.py": {
+    "repository": "https://github.com/baaivision/Uni3D",
+    "revision": "64e03c3c42c196e8cb5ed03857810af9fc9ac39c",
+    "path": "models/point_encoder.py",
+    "original_sha256": "3967a6b84b44314a81c75093bd36a3950eebb3eb96a782b2c6078234eebc6c39"
+  },
+  "third_party/UNI3D-LICENSE": {
+    "repository": "https://github.com/baaivision/Uni3D",
+    "revision": "64e03c3c42c196e8cb5ed03857810af9fc9ac39c",
+    "path": "LICENSE",
+    "original_sha256": "2b59e660d9c993fa155c68fdc4386bb0b1abb6eebcdb4771f41842c50ecc320e"
+  }
+}

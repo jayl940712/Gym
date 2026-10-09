@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY benchmarks/three_d_codebench /opt/Gym/benchmarks/three_d_codebench
+RUN bash /opt/Gym/benchmarks/three_d_codebench/runtime/install-scorer.sh
+ENV PYTHONPATH=/opt/Gym
+WORKDIR /opt/Gym
