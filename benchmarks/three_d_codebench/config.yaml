@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 config_paths:
 - nemo_gym/sandbox/providers/docker/configs/docker.yaml
+use_absolute_ip: true
 three_d_codebench_agent:
   responses_api_agents:
     three_d_codebench_agent:
@@ -11,7 +12,7 @@ three_d_codebench_agent:
       model_server:
         type: responses_api_models
         name: policy_model
-      concurrency: 16
+      concurrency: 64
       dataset_root: ${oc.env:THREED_DATASET,data/three_d_codebench}
       results_dir: results/three_d_codebench/artifacts
       artifacts_dir: results/three_d_codebench/opencode
@@ -20,7 +21,7 @@ three_d_codebench_agent:
       opencode_model_call_timeout: 3600000
       preinstalled_opencode: true
       output_token_policy: remaining_context
-      sandbox_timeout: 1800
+      sandbox_timeout: 3600
       execution_timeout: 300
       sandbox_provider: sandbox
       network_access: inherit
@@ -28,7 +29,11 @@ three_d_codebench_agent:
       sandbox_config:
         image: ${oc.env:THREED_TASK_IMAGE,3dcodebench-runtime:latest}
         workdir: /workspace
+        ttl_s: 7200
         ready_timeout_s: 600
+        resources:
+          cpu: 2
+          memory_mib: 8192
         env:
           PATH: /usr/local/bin:/usr/bin:/bin
           BLENDER: /usr/bin/blender
@@ -64,3 +69,4 @@ three_d_codebench_environment_server:
       agent_server:
         type: responses_api_agents
         name: three_d_codebench_agent
+      default_episode_timeout_seconds: 7200

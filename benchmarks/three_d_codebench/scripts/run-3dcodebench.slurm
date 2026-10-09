@@ -137,7 +137,7 @@ config = {
         "results_dir": str(output / "artifacts"),
         "artifacts_dir": str(output / "opencode"),
         "opencode_max_context_window": 131072,
-        "concurrency": 16,
+        "concurrency": 64,
         "sandbox_config": {
             "image": str(scratch / "three_d_codebench-opencode.sqsh"),
             "env": {"OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"},
@@ -183,11 +183,11 @@ TMPDIR=/tmp ENROOT_MAX_PROCESSORS=16 srun --overlap --no-container-mount-home --
     "$serving_python" -m vllm.entrypoints.cli.main serve \
     "$checkpoint" --host 0.0.0.0 --port 8000 --served-model-name three_d_codebench-policy \
     --tensor-parallel-size 4 --trust-remote-code --max-model-len 131072 \
-    --max-num-seqs 16 --max-num-batched-tokens 8192 --gpu-memory-utilization 0.85 \
+    --max-num-seqs 64 --max-num-batched-tokens 8192 --gpu-memory-utilization 0.85 \
     "${parser_flags[@]}" \
-    --limit-mm-per-prompt '{"image":8,"video":0,"audio":0}' \
+    --limit-mm-per-prompt '{"image":4,"video":0,"audio":0}' \
     "${hf_flags[@]}" \
-    --compilation-config '{"cudagraph_capture_sizes":[1,2,4,8]}' \
+    --compilation-config '{"cudagraph_capture_sizes":[1,2,4,8,16,32,48,64]}' \
     > "$output/model.log" 2>&1 &
 model_pid=$!
 ready=false
@@ -211,7 +211,7 @@ gym_pid=$!
 HEAD_MAX_WAIT=600 bash scripts/wait_for_servers.sh "$gym_pid" "$head_port" 1800
 gym eval run --no-serve --resume --config "$output/config.yaml" --agent three_d_codebench_agent \
     --input "$output/input.jsonl" --output "$output/rollouts_generation.jsonl" \
-    --num-repeats "$repeats" --concurrency 16 --health-check-workers 4 \
+    --num-repeats "$repeats" --concurrency 64 --health-check-workers 4 \
     ++dispatch_budget_s=10800 ++drain_margin_s=1800 ++require_complete=true \
     > "$output/eval.log" 2>&1
 touch "$output/generation_complete"
