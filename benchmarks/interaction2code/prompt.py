@@ -18,7 +18,11 @@ Firefox, Selenium, and Python Playwright with headless Chromium are installed. S
 the page with a local HTTP server in the background and use Playwright or Selenium to
 open it and perform the interaction. To keep the server alive between tool calls,
 detach it with setsid and redirect stdin, stdout, and stderr, for example:
-setsid python3 -m http.server 8080 --directory /workspace > /tmp/server.log 2>&1 < /dev/null &
+setsid python3 -u -m http.server 0 --bind 127.0.0.1 --directory /workspace > /tmp/server.log 2>&1 < /dev/null & echo $! > /tmp/server.pid
+Port 0 lets the OS assign a free port. Read the chosen URL from /tmp/server.log and use
+that URL in your browser automation. Reuse this server between captures. If you need
+to stop it, terminate only the PID recorded in /tmp/server.pid; do not use pkill or
+killall. Concurrent episodes share host networking but have separate process namespaces.
 Determine the browser viewport from the input image dimensions. Capture screenshots of
 both the initial state and the state after the interaction. Read both screenshots with
 your image-capable read tool and compare them visually with the references. Refine the

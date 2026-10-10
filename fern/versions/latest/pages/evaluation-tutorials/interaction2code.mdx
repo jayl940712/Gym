@@ -37,7 +37,7 @@ files from this checkout:
 ```bash
 python -m benchmarks.interaction2code.prepare
 docker build -f benchmarks/interaction2code/Dockerfile \
-  -t interaction2code-opencode:1.17.11-browser-v2 .
+  -t interaction2code-opencode:1.17.11-browser-v3 .
 ```
 
 Preparation validates the required images for every interaction and writes
@@ -79,12 +79,12 @@ gym env start --config benchmarks/interaction2code/nvidia.yaml
 gym eval run --no-serve --config benchmarks/interaction2code/nvidia.yaml \
   --agent interaction2code_agent \
   --input benchmarks/interaction2code/example.jsonl \
-  --output results/interaction2code/smoke.jsonl --num-repeats 1 --concurrency 4
+  --output results/interaction2code/smoke.jsonl --num-repeats 1 --concurrency 64
 
 gym eval run --no-serve --config benchmarks/interaction2code/nvidia.yaml \
   --agent interaction2code_agent \
   --input benchmarks/interaction2code/data/interaction2code_benchmark.jsonl \
-  --output results/interaction2code/rollouts.jsonl --num-repeats 1 --concurrency 4
+  --output results/interaction2code/rollouts.jsonl --num-repeats 1 --concurrency 64
 ```
 
 The preset uses Gym's existing Chat Completions model adapter. It selects only
@@ -93,16 +93,18 @@ requests containing both reasoning aliases. Other endpoints can use
 `config.yaml` with their own model-server configuration.
 
 Budgets follow BenchCAD: OpenCode 1.17.11, 131,072-token context, 50 steps, one-hour
-execution and model-call timeouts, concurrency four, two CPUs and 8 GiB maximum
+execution and model-call timeouts, concurrency 64, two CPUs and 8 GiB maximum
 memory per sandbox. Automatic compaction is disabled. The output-token policy
 uses the remaining context rather than the greeting test's 1,024-token cap.
 The prepared tasks use temperature 0.7 and the benchmark uses one repeat.
-Native scoring defaults to two concurrent processes, separately from the four
+Native scoring defaults to two concurrent processes, separately from the 64
 OpenCode episodes, with two Torch threads each (`scoring_threads`), to bound
 CLIP/EasyOCR memory on a 16 GiB CPU host while using four CPU cores. Shared
 file locks enforce this limit across scoring processes using the same cache;
 `scoring_concurrency` can be raised on hosts with more memory.
 Ensure the inference endpoint supports the configured context, images and tools.
+For Enroot/Pyxis containers and local vLLM serving on Slurm, see
+[`scripts/README.md`](../../../../../benchmarks/interaction2code/scripts/README.md).
 
 ## Prompt and execution protocol
 
@@ -122,8 +124,10 @@ The agent and verification browser run in separate disposable containers.
 The verification container receives the generated HTML, placeholder, and a
 Gym-owned capture script uploaded after coding finishes. That script is absent
 from the shared image and the coding container. Rebuild the image with the new
-`1.17.11-browser-v2` tag before using the revised prompt; the older image includes
-the capture script and lacks Playwright.
+`1.17.11-browser-v3` tag before using the revised prompt; early images included
+the capture script and lacked Playwright. The v3 recipe routes Playwright to
+Debian Chromium, avoiding the bundled headless shell hang on the cluster ARM
+nodes with 64 KiB kernel pages.
 Trusted scoring reads its downloaded screenshots and private annotations; it
 never executes generated HTML. Browser viewport dimensions are set from the
 reference screenshot rather than depending on a host desktop's maximize behavior.
@@ -187,3 +191,13 @@ Report this protocol as **interaction2code-opencode**. Iterative tool use and th
 deterministic browser viewport make it distinct from the upstream single-response
 leaderboard. This evaluation adapter does not provide training token IDs or log
 probabilities.
+
+Enroot isolates process namespaces but shares host networking. The agent prompt
+starts its HTTP server on port `0`, reads the assigned URL from its log, and
+stops only its recorded server PID. Fixed ports can collide across episodes.
+The Slurm launcher allows 128 Enroot commands so 64 long coding commands can
+run alongside sandbox setup and verification. Validate concurrent servers with:
+
+```bash
+python benchmarks/interaction2code/runtime/check_sandbox.py /path/browser.sqsh /path/check-results
+```

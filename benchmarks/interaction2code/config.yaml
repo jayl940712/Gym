@@ -12,7 +12,7 @@ interaction2code_agent:
       model_server:
         type: responses_api_models
         name: policy_model
-      concurrency: 4
+      concurrency: 64
       scoring_concurrency: 2
       scoring_threads: 2
       dataset_root: benchmarks/interaction2code/data
@@ -29,7 +29,7 @@ interaction2code_agent:
       network_access: inherit
       token_id_capture: false
       sandbox_config:
-        image: interaction2code-opencode:1.17.11-browser-v2
+        image: interaction2code-opencode:1.17.11-browser-v3
         workdir: /workspace
         ttl_s: 7200
         ready_timeout_s: 600

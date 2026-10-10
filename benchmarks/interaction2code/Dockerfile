@@ -3,11 +3,14 @@
 FROM python:3.12-slim-bookworm
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    firefox-esr ca-certificates curl git ripgrep fonts-dejavu fonts-liberation \
+    firefox-esr chromium ca-certificates curl git ripgrep fonts-dejavu fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN python -m pip install --no-cache-dir selenium==4.35.0 Pillow==11.3.0 playwright==1.55.0 \
     && python -m playwright install --with-deps --only-shell chromium \
+    && for shell in /opt/playwright/chromium_headless_shell-*/chrome-linux/headless_shell; do \
+         rm -f "$shell"; printf '#!/bin/sh\nexec /usr/bin/chromium "$@"\n' > "$shell"; chmod +x "$shell"; \
+       done \
     && rm -rf /var/lib/apt/lists/*
 RUN case "$TARGETARCH" in arm64) gecko_arch=aarch64;; amd64) gecko_arch=64;; *) exit 1;; esac \
     && curl -fsSL "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux-${gecko_arch}.tar.gz" \
