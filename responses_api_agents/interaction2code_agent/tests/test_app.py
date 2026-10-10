@@ -121,11 +121,12 @@ def test_nvidia_config_uses_one_reasoning_alias_and_one_provider(monkeypatch):
         ("timeout", "agent_timeout", False),
         ("context", "context_limit", False),
         ("agent", "agent_error", True),
+        ("selfkill", "agent_error", False),
         ("scorer", "infrastructure_error", True),
         ("asset", "infrastructure_error", True),
     ],
 )
-async def test_run_isolation_failures_artifacts_and_cleanup(agent, body, monkeypatch, case, status, masked):
+async def test_run_isolation_failures_artifacts_and_cleanup(agent, body, monkeypatch, tmp_path, case, status, masked):
     sandbox = SimpleNamespace(
         stop=AsyncMock(),
         upload=AsyncMock(),
@@ -149,10 +150,35 @@ async def test_run_isolation_failures_artifacts_and_cleanup(agent, body, monkeyp
     if case == "scorer":
         grade.side_effect = RuntimeError("metric weights unavailable")
     monkeypatch.setattr(Interaction2CodeAgent, "_grade", grade)
-    if case in {"timeout", "context", "agent"}:
+    if case in {"timeout", "context", "agent", "selfkill"}:
         agent._sandbox_id_to_run_result["session"] = {"opencode_failed": True}
         if case == "timeout":
             agent._sandbox_id_to_run_result["session"]["opencode_error_type"] = "timeout"
+        if case == "selfkill":
+            exported = tmp_path / "export.json"
+            exported.write_text(
+                json.dumps(
+                    {
+                        "messages": [
+                            {
+                                "parts": [
+                                    {
+                                        "type": "tool",
+                                        "tool": "bash",
+                                        "state": {
+                                            "status": "running",
+                                            "input": {"command": "pkill -f opencode"},
+                                        },
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                )
+            )
+            agent._sandbox_id_to_run_result["session"].update(
+                opencode_exit_code=-15, opencode_results_fpath=str(exported)
+            )
     if case == "asset":
         path = task_directory(agent.config.dataset_root, body) / "before.png"
         path.unlink()

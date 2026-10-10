@@ -17,6 +17,7 @@ from nemo_gym.config_types import ResourcesServerRef
 from nemo_gym.openai_utils import NeMoGymResponse
 from nemo_gym.rollout_observability import AgentObservationBundle, TrajectoryRecord
 from nemo_gym.server_utils import SESSION_ID_KEY, is_nemo_gym_fastapi_entrypoint
+from responses_api_agents.interaction2code_agent.failures import self_termination_reason
 from responses_api_agents.interaction2code_agent.runtime import ensure_runtime, score
 from responses_api_agents.opencode_agent.observability import scope_opencode_trajectory
 from responses_api_agents.opencode_sandboxed_agent.app import OpenCodeSandboxedAgent, OpenCodeSandboxedAgentConfig
@@ -213,8 +214,15 @@ class Interaction2CodeAgent(OpenCodeSandboxedAgent):
                         or run_result.get("opencode_exit_code") == 124
                     )
                     limited = response.status == "incomplete"
+                    self_termination = self_termination_reason(
+                        run_result, body.responses_create_params.model_dump_json()
+                    )
                     status = "agent_timeout" if timed_out else "context_limit" if limited else "agent_error"
-                    result = failed_result(status=status, infrastructure=not (timed_out or limited))
+                    result = failed_result(
+                        status=status,
+                        infrastructure=not (timed_out or limited or self_termination),
+                        reason=self_termination,
+                    )
                 else:
                     exists = await sandbox.exec(
                         "test -f /workspace/index.html && test ! -L /workspace/index.html && test $(wc -c < /workspace/index.html) -le 16777216",
