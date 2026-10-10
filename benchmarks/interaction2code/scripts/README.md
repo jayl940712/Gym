@@ -37,6 +37,13 @@ reference pairs and repeated visual feedback to remain in conversation history. 
 sandbox with no reference annotations. The serving model is released when the
 job ends; all native metrics are calculated during rollout collection.
 
+For `qwen3_coder`, the launcher loads Gym's parser plugin for vLLM 0.24.
+It skips incremental JSON argument conversion when parsing a complete,
+non-streaming response and scans parameter tags without repeated searches.
+This prevents large HTML tool calls from blocking the API event loop. Normal
+tool arguments and native metric definitions are preserved. Other tool parser
+names do not load this plugin.
+
 Use a limit of `5` instead of `0` for a smoke evaluation in a separate output
 folder. Reuse the same output folder and exact inputs to resume; completed rows
 are preserved. Failed task results also count as completed. To retry a failure,

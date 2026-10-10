@@ -160,6 +160,9 @@ PY_CONFIG
 [[ ! -f "$output/complete" ]] || { echo 'This run is already complete.'; exit 0; }
 
 parser_flags=(--enable-auto-tool-choice --tool-call-parser "${I2C_TOOL_CALL_PARSER:?Set the tool parser for your served policy}")
+if [[ "$I2C_TOOL_CALL_PARSER" == qwen3_coder ]]; then
+    parser_flags+=(--tool-parser-plugin "$repo/benchmarks/interaction2code/runtime/qwen3_parser_plugin.py")
+fi
 [[ -z "${I2C_REASONING_PARSER:-}" ]] || parser_flags+=(--reasoning-parser "$I2C_REASONING_PARSER")
 hf_flags=()
 [[ -z "${I2C_HF_OVERRIDES:-}" ]] || hf_flags=(--hf-overrides "$I2C_HF_OVERRIDES")
