@@ -25,7 +25,11 @@ Each prepared JSONL row identifies a task and contains Responses API input:
 conditioning images. Text tasks use the published object description. Image
 tasks upload `Image_005.png`, `Image_015.png`, `Image_025.png`, and
 `Image_035.png` to `/workspace/`; the prompt instructs OpenCode to inspect them
-with its read tool. The agent does not upload reference programs or meshes.
+with its read tool. Image tasks also receive `/workspace/render_views.py`, the same
+camera and lighting helper used during verification. The prompt asks for two rounds
+of CPU rendering, reading all four previews, and revising the model after inspecting
+the first round. Materials may reproduce visible colors. The agent does not upload
+reference programs or meshes.
 
 ## Execution and verification
 
@@ -60,7 +64,7 @@ per independent render/export command. The policy checkpoint belongs to the
 model server; learned metric weights belong to the offline scorer.
 
 Each episode's `artifact_dir` holds `input.json`, `response.json`, `answer.txt`,
-`solution.py` when available, render/export stdout and stderr, `renders/`,
+`solution.py` when available, optional agent previews in `feedback/roundN/`, render/export stdout and stderr, `renders/`,
 `glb/`, and `result.json`. The result records status, provisional reward,
 OpenCode execution details, and trajectory metadata.
 
@@ -77,3 +81,9 @@ All rendering/export helpers are uploaded from `benchmarks/three_d_codebench/run
 into the fresh verification sandbox. Scorers are in `benchmarks/three_d_codebench/metrics/`;
 no sibling repository or container-embedded benchmark source is required. Dataset
 and sandbox image paths are configured independently.
+
+Image prompt changes affect benchmark comparability: these episodes permit visual
+iteration and materials, unlike the previous geometry-only prompt. The native
+scoring protocol is unchanged. Agent previews are retained as evidence and are
+never used as final scorer inputs. The final response can summarize revisions;
+only the submitted `solution.py` is executed.

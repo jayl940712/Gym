@@ -189,6 +189,10 @@ class ThreeDCodeBenchAgent(OpenCodeSandboxedAgent):
                     if Path(name).name != name or not image.is_relative_to(directory):
                         raise ValueError("Unsafe image path")
                     await sandbox.upload(image, f"/workspace/{name}")
+                if body.task == "image_to_3d":
+                    await sandbox.upload(
+                        GYM_ROOT / "benchmarks/three_d_codebench/runtime/render.py", "/workspace/render_views.py"
+                    )
                 response = await self.responses(request, body.responses_create_params)
                 run_result = self._sandbox_id_to_run_result.get(key, {}).copy()
                 observations = run_result.pop("_ng_agent_observations", None)
@@ -217,6 +221,29 @@ class ThreeDCodeBenchAgent(OpenCodeSandboxedAgent):
                     else:
                         program = artifacts / "solution.py"
                         await sandbox.download("/workspace/solution.py", program)
+                        if body.task == "image_to_3d":
+                            # Optional agent previews are evidence, never scorer inputs.
+                            previews = await sandbox.exec(
+                                "find /workspace/feedback -mindepth 1 -maxdepth 2 -type f", timeout_s=30
+                            )
+                            for remote in (previews.stdout or "").splitlines():
+                                path = Path(remote)
+                                try:
+                                    relative = path.relative_to("/workspace/feedback")
+                                except ValueError:
+                                    continue
+                                if (
+                                    ".." in relative.parts
+                                    or not 1 <= len(relative.parts) <= 2
+                                    or path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".json")
+                                ):
+                                    continue
+                                local = artifacts / "feedback" / relative
+                                local.parent.mkdir(parents=True, exist_ok=True)
+                                try:
+                                    await sandbox.download(remote, local)
+                                except Exception:
+                                    LOG.warning("Cannot save optional preview %s", remote, exc_info=True)
                         await sandbox.stop()
                         sandbox = None
                         result = await self._grade(program, artifacts)

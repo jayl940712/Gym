@@ -69,7 +69,14 @@ def prepare(*, raw_root: Path, output: Path, instances: list[str] | None = None)
                     "task": task,
                     "record_id": name,
                     "responses_create_params": {
-                        "input": [{"role": "user", "content": system + "\n\n" + user + "\n" + instruction + workflow}]
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": system
+                                if images
+                                else system + "\n\n" + user + "\n" + instruction + workflow,
+                            }
+                        ]
                     },
                 }
             )
