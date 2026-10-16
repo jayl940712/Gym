@@ -109,6 +109,85 @@ class TestApp:
         assert judge._client.max_http_attempts == 5
         assert policy._client.max_http_attempts == 3
 
+    @pytest.mark.parametrize("enabled", [False, True])
+    async def test_empty_zero_token_chat_response_is_retried_only_when_enabled(self, enabled):
+        server = self._setup_server(
+            reject_empty_chat_completions=enabled,
+            upstream_max_num_tries=1,
+            upstream_retry_policy={"max_attempts": 3, "backoff_initial_seconds": 0},
+        )
+        empty = {
+            "id": "empty",
+            "created": 0,
+            "model": "dummy_model",
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": None}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        valid = empty | {
+            "id": "valid",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}],
+        }
+        server._client = MagicMock(spec=NeMoGymAsyncOpenAI)
+        server._client.create_chat_completion = AsyncMock(side_effect=[empty, valid])
+        response = await server.chat_completions(
+            NeMoGymChatCompletionCreateParamsNonStreaming(messages=[{"role": "user", "content": "hi"}])
+        )
+        assert response.id == ("valid" if enabled else "empty")
+        assert server._client.create_chat_completion.await_count == (2 if enabled else 1)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            {"role": "assistant", "content": "done"},
+            {"role": "assistant", "content": None, "reasoning_content": "thinking"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tool1", "type": "function", "function": {"name": "read", "arguments": "{}"}}],
+            },
+        ],
+    )
+    async def test_nonempty_chat_response_is_not_retried_when_usage_is_zero(self, message):
+        server = self._setup_server(reject_empty_chat_completions=True)
+        data = {
+            "id": "nonempty",
+            "created": 0,
+            "model": "dummy_model",
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        server._client = MagicMock(spec=NeMoGymAsyncOpenAI)
+        server._client.create_chat_completion = AsyncMock(return_value=data)
+        response = await server.chat_completions(
+            NeMoGymChatCompletionCreateParamsNonStreaming(messages=[{"role": "user", "content": "hi"}])
+        )
+        assert response.id == "nonempty"
+        server._client.create_chat_completion.assert_awaited_once()
+
+    async def test_empty_chat_response_retries_are_bounded(self):
+        server = self._setup_server(
+            reject_empty_chat_completions=True,
+            upstream_max_num_tries=1,
+            upstream_retry_policy={"max_attempts": 3, "backoff_initial_seconds": 0},
+        )
+        empty = {
+            "id": "empty",
+            "created": 0,
+            "model": "dummy_model",
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": None}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        server._client = MagicMock(spec=NeMoGymAsyncOpenAI)
+        server._client.create_chat_completion = AsyncMock(return_value=empty)
+        with pytest.raises(openai_model_module.UpstreamRetriesExhaustedError):
+            await server.chat_completions(
+                NeMoGymChatCompletionCreateParamsNonStreaming(messages=[{"role": "user", "content": "hi"}])
+            )
+        assert server._client.create_chat_completion.await_count == 3
+
     async def test_chat_completions(self, monkeypatch: MonkeyPatch, tmp_path) -> None:
         server = self._setup_server()
         server.server_client.global_config_dict = {

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -131,7 +132,9 @@ async def test_run_isolation_failures_artifacts_and_cleanup(agent, body, monkeyp
         stop=AsyncMock(),
         upload=AsyncMock(),
         download=AsyncMock(),
-        exec=AsyncMock(return_value=SimpleNamespace(return_code=1 if case == "missing" else 0, error_type=None)),
+        exec=AsyncMock(
+            return_value=SimpleNamespace(return_code=1 if case == "missing" else 0, error_type=None, stdout="")
+        ),
     )
     monkeypatch.setattr(Interaction2CodeAgent, "_start_sandbox", AsyncMock(return_value=sandbox))
     generated = response()
@@ -250,3 +253,35 @@ async def test_render_sandbox_never_receives_reference_images(agent, body, monke
         "/workspace/placeholder.jpg",
     ]
     sandbox.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["unchanged", "tampered", "unavailable"])
+async def test_input_integrity_audit_preserves_evidence_without_uploads(agent, body, tmp_path, case):
+    directory = task_directory(agent.config.dataset_root, body)
+    artifacts = tmp_path / "audit"
+    artifacts.mkdir()
+    paths = {name: directory / name for name in ("before.png", "after.png", "placeholder.jpg")}
+    lines = []
+    for name, path in paths.items():
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if case == "tampered" and name == "placeholder.jpg":
+            digest = hashlib.sha256(b"replacement image").hexdigest()
+        lines.append(f"{digest}  /workspace/{name}")
+    sandbox = SimpleNamespace(
+        exec=AsyncMock(return_value=SimpleNamespace(stdout="\n".join(lines), return_code=0, error_type=None)),
+        upload=AsyncMock(),
+    )
+    if case == "unavailable":
+        sandbox.exec.side_effect = RuntimeError("sandbox unavailable")
+    await agent._audit_inputs(sandbox, directory, artifacts)
+    report = json.loads((artifacts / "input_assets_audit.json").read_text())
+    assert report["verified"] is (case == "unchanged")
+    if case == "tampered":
+        assert report["changed_inputs"] == ["placeholder.jpg"]
+        assert (directory / "placeholder.jpg").read_bytes() == b"asset"
+    if case == "unavailable":
+        assert "sandbox unavailable" in report["error"]
+    sandbox.upload.assert_not_awaited()
+    sandbox.exec.assert_awaited_once()
+    assert sandbox.exec.await_args.args[0].startswith("sha256sum ")

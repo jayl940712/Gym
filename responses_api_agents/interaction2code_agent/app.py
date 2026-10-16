@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Interaction2Code with isolated OpenCode generation and native visual metrics."""
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -113,6 +114,51 @@ class Interaction2CodeAgent(OpenCodeSandboxedAgent):
         """Provision the isolated native scorer before accepting episodes."""
         super().model_post_init(context)
         ensure_runtime(self.config.runtime_root)
+
+    async def _collect_feedback(self, sandbox, artifacts: Path) -> None:
+        """Retain optional preview images before disposing of the coding sandbox."""
+        try:
+            result = await sandbox.exec(
+                "find /workspace/feedback -mindepth 1 -maxdepth 2 -type f 2>/dev/null || true",
+                timeout_s=30,
+            )
+            for name in result.stdout.splitlines():
+                relative = Path(name).relative_to("/workspace/feedback")
+                if ".." in relative.parts or len(relative.parts) not in (1, 2):
+                    continue
+                if relative.suffix.lower() not in (".png", ".jpg", ".jpeg", ".json"):
+                    continue
+                destination = artifacts / "feedback" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                await sandbox.download(name, destination)
+        except Exception:
+            LOG.warning("Could not retain optional Interaction2Code previews", exc_info=True)
+
+    async def _audit_inputs(self, sandbox, directory: Path, artifacts: Path) -> None:
+        """Record input integrity without giving the policy any audit code or feedback."""
+        paths = {name: directory / name for name in ("before.png", "after.png", "placeholder.jpg")}
+        expected = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()}
+        report = {"expected_sha256": expected, "observed_sha256": {}, "verified": False}
+        try:
+            result = await sandbox.exec(
+                "sha256sum /workspace/before.png /workspace/after.png /workspace/placeholder.jpg",
+                timeout_s=30,
+            )
+            observed = {}
+            for line in result.stdout.splitlines():
+                digest, filename = line.split(maxsplit=1)
+                if len(digest) == 64:
+                    observed[Path(filename.strip()).name] = digest
+            changed = [name for name, digest in expected.items() if observed.get(name) != digest]
+            report.update(
+                observed_sha256=observed,
+                changed_inputs=changed,
+                verified=not changed and not result.return_code and not result.error_type,
+            )
+        except Exception as error:
+            report["error"] = str(error)
+            LOG.warning("Could not audit Interaction2Code input integrity", exc_info=True)
+        (artifacts / "input_assets_audit.json").write_text(json.dumps(report, indent=2) + "\n")
 
     async def _grade(self, directory: Path, artifacts: Path, metadata: dict) -> dict:
         sandbox = await self._start_sandbox()
@@ -234,6 +280,8 @@ class Interaction2CodeAgent(OpenCodeSandboxedAgent):
                         result = failed_result(status="missing_html", infrastructure=False)
                     else:
                         await sandbox.download("/workspace/index.html", artifacts / "index.html")
+                        await self._collect_feedback(sandbox, artifacts)
+                        await self._audit_inputs(sandbox, directory, artifacts)
                         await sandbox.stop()
                         sandbox = None
                         result = await self._grade(directory, artifacts, metadata)

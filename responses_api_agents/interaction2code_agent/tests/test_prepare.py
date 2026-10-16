@@ -36,23 +36,19 @@ def test_export_has_one_row_per_interaction_and_only_unmarked_inputs(tmp_path):
     assert [row["task_id"] for row in rows] == ["1-1", "1-2"]
     prompt = rows[0]["responses_create_params"]["input"][0]["content"]
     assert "/workspace/index.html" in prompt
-    assert "Determine the browser viewport from the input image dimensions" in prompt
     assert "1280" not in prompt and "720" not in prompt
-    assert "near-exact visual copy of both states" in prompt
-    assert "detach it with setsid and redirect stdin, stdout, and stderr" in prompt
-    assert "Playwright" in prompt
-    assert "local HTTP server in the background" in prompt
-    assert "both the initial state and the state after the interaction" in prompt
-    assert "Read both screenshots with\nyour image-capable read tool" in prompt
-    assert "compare them visually" in prompt
-    assert "IoU" not in prompt
-    assert "pixel differences" not in prompt
-    assert "overlays" not in prompt
-    assert "relative URL" in prompt
+    assert "capture_views.py" not in prompt
+    assert "capture_views" not in prompt
     assert "render.py" not in prompt
+    assert "subprocess.run" not in prompt
+    assert "viewport.json" not in prompt
+    assert "actual pixel dimensions" in prompt
+    assert "corresponding input image" in prompt
+    assert "at least two visual inspection rounds" in " ".join(prompt.split())
+    assert "relative placeholder.jpg" in " ".join(prompt.split())
+    assert "mark.png" not in prompt
+    assert "IoU" not in prompt
     assert "/opt/interaction2code" not in prompt
-    assert "evaluator" not in prompt.lower()
-    assert "test" not in prompt.lower()
     assert "shop" not in prompt
     assert "mark.png" not in prompt
     assert (output / "tasks/1-1/before.png").exists()

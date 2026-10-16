@@ -2,34 +2,52 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Interaction2Code direct task, expressed for a file-writing coding agent."""
 
-DIRECT_PROMPT = """Reconstruct the interactive webpage shown in /workspace/before.png and
-/workspace/after.png. Read both images with your image-capable read tool before coding.
-Infer the interaction that changes the first state into the second and implement it.
-Aim for a near-exact visual copy of both states: match layout, placement, dimensions,
-spacing, fonts, colors, text, and all visible elements. Do not reproduce annotation boxes.
+DIRECT_PROMPT = """Reconstruct the interactive webpage in /workspace/before.png and /workspace/after.png.
+Produce /workspace/index.html with the same appearance and the interaction connecting
+the two states. Match the layout, text, colors, typography, spacing, icons, borders,
+floating controls, and overlays. Work only from the provided images; do not visit the
+original website or use remote assets.
 
-Save the complete page as /workspace/index.html with HTML, CSS, and JavaScript embedded.
-Give the element that triggers the interaction the id interact1. Use the relative URL
-placeholder.jpg for every image, sized to match the references. Do not depend on other
-files or remote assets, omit repeated content, or replace the interaction with a static
-after image. End the document with </html>.
+Build first, then refine through visual feedback:
+1. Read both reference images and determine their actual pixel dimensions. Your
+   next tool action after these reads MUST write a working first index.html.
+   Do not crop images, sample pixels, probe fonts, or run exploratory analysis
+   before this first page exists. Defer fine-detail investigation until you have
+   completed two visual correction rounds below.
+2. Embed all HTML, CSS, and JavaScript in index.html. Give the clickable trigger id
+   interact1 and implement its transition to the after state. Use relative
+   placeholder.jpg unchanged for every image, matching the reference sizes and
+   positions. Treat all supplied files as read-only. Do not replace input assets or
+   generate substitute images; keep your implementation self-contained in index.html.
+   Recreate actual elements and behavior; do not substitute a screenshot or omit
+   repeated content. End the document with </html>.
+3. Write your own browser automation using the installed tools: Firefox/Selenium or
+   Chromium/Playwright. Python Pillow is available too; no package installation is
+   needed. Determine screenshot dimensions directly from the input images. Capture
+   the initial page and the page after clicking interact1. Match each generated
+   screenshot's pixel width and height to its corresponding input image; use each
+   image's actual dimensions, not its resized display in the image tool. Save them under
+   /workspace/feedback/round1/ with clear before/after filenames.
+4. Open BOTH generated screenshots with the image-capable read tool. Compare each
+   with its corresponding reference. Choose the most obvious visible mismatches and
+   immediately edit index.html to correct them; do not pause for pixel measurements
+   or more reference analysis. Render again under round2/ and open BOTH new
+   screenshots with the image tool. Complete at least two visual inspection rounds
+   with a real page revision between them before any fine-detail investigation.
+   Repeat this visual correction loop while useful improvements remain and your
+   budget permits. Reopening the revised screenshots is essential; numerical image
+   measurements and successful browser commands do not replace visual inspection.
 
-Firefox, Selenium, and Python Playwright with headless Chromium are installed. Serve
-the page with a local HTTP server in the background and use Playwright or Selenium to
-open it and perform the interaction. To keep the server alive between tool calls,
-detach it with setsid and redirect stdin, stdout, and stderr, for example:
-setsid python3 -u -m http.server 0 --bind 127.0.0.1 --directory /workspace > /tmp/server.log 2>&1 < /dev/null & echo $! > /tmp/server.pid
-Port 0 lets the OS assign a free port. Read the chosen URL from /tmp/server.log and use
-that URL in your browser automation. Reuse this server between captures. If you need
-to stop it, terminate only the PID recorded in /tmp/server.pid; do not use pkill or
-killall. Concurrent episodes share host networking but have separate process namespaces.
-Determine the browser viewport from the input image dimensions. Capture screenshots of
-both the initial state and the state after the interaction. Read both screenshots with
-your image-capable read tool and compare them visually with the references. Refine the
-implementation and repeat until both states match as closely as possible visually.
+Prioritize overall layout and the changed interaction region, then smaller details.
+After the first two visual rounds, use close-up crops or measurements when useful,
+comparing the actual PNGs at the same scale. Avoid exhaustive pixel or font probing;
+spend most of your effort making and visually checking meaningful page improvements.
+Inspect unfamiliar symbols carefully rather than replacing them with guessed icons.
+Verify both states after every correction, and preserve working click behavior.
+Keep all preview images. Successful browser execution alone is not visual validation.
 
-Work only from the provided images; do not visit or search for the original website.
-Your deliverable is the saved /workspace/index.html file.
+Deliver the file /workspace/index.html. Your final response should briefly describe
+what you implemented and visually checked; do not repeat the HTML source.
 """
 
 

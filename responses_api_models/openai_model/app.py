@@ -217,6 +217,11 @@ class SimpleModelServerConfig(BaseResponsesAPIModelConfig):
             )
         return self
 
+    reject_empty_chat_completions: bool = Field(
+        default=False,
+        description="Treat content-free, zero-token chat completions as provider errors so the configured retry policy can retry them.",
+    )
+
     drop_input_reasoning_items: bool = Field(
         default=False,
         description=(
@@ -383,7 +388,19 @@ class SimpleModelServer(SimpleResponsesAPIModel):
 
         async def create_and_validate() -> NeMoGymChatCompletion:
             response_dict = await self._client.create_chat_completion(**body_dict)
-            return NeMoGymChatCompletion.model_validate(response_dict)
+            response = NeMoGymChatCompletion.model_validate(response_dict)
+            usage = response.usage
+            if self.config.reject_empty_chat_completions and usage and usage.total_tokens == 0:
+                messages = [choice.message.model_dump() for choice in response.choices]
+                if not any(
+                    message.get("content")
+                    or message.get("reasoning_content")
+                    or message.get("tool_calls")
+                    or message.get("refusal")
+                    for message in messages
+                ):
+                    raise RuntimeError("Upstream returned an empty chat completion with zero tokens")
+            return response
 
         return await self._serve_upstream(create_and_validate)
 

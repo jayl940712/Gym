@@ -10,8 +10,25 @@ from statistics import mean
 
 
 def read_rows(path: Path) -> list[dict]:
-    """Read saved Gym inputs or verified rollout rows."""
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    """Stream the fields needed for reporting, excluding large captured histories."""
+    fields = (
+        "page_id",
+        "interaction_id",
+        "mask_sample",
+        "infrastructure_retry",
+        "full_page",
+        "interaction",
+        "status",
+        "interaction_flag",
+        "reward",
+    )
+    rows = []
+    with path.open() as stream:
+        for line in stream:
+            if line.strip():
+                row = json.loads(line)
+                rows.append({key: row[key] for key in fields if key in row})
+    return rows
 
 
 def report(*, inputs: Path, rollouts: Path) -> dict:
