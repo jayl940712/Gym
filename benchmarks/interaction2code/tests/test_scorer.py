@@ -115,7 +115,7 @@ def test_native_ssim_and_first_red_contour(tmp_path):
 )
 def test_native_character_bleu_and_empty_text(monkeypatch, reference, candidate, expected):
     values = iter([reference, candidate])
-    monkeypatch.setattr(scorer, "image_text", lambda _: next(values))
+    monkeypatch.setattr(scorer, "image_text", lambda _, **kwargs: next(values))
     assert scorer.text_similarity(Path("a"), Path("b")) == expected
 
 
@@ -179,3 +179,102 @@ def test_native_flag_and_metric_fields(tmp_path, monkeypatch, case, flag):
     }
     # Full-page CLIP remains populated for invalid interactions, matching upstream.
     assert result["full_page"]["clip_similarity"] == (0 if case == "missing" else 0.8)
+
+
+def test_reference_ocr_cache_uses_content_and_preserves_exact_text(tmp_path, monkeypatch):
+    monkeypatch.setattr(scorer, "MODEL_CACHE", tmp_path / "models")
+    monkeypatch.setattr(scorer, "ocr_cache_profile", lambda *args: "profile-a")
+    calls = []
+    monkeypatch.setattr(scorer, "_image_text", lambda p: calls.append(p.read_bytes()) or " Exact OCR Text")
+    first, second = tmp_path / "first.png", tmp_path / "second.png"
+    first.write_bytes(b"same image")
+    second.write_bytes(first.read_bytes())
+    assert scorer.image_text(first, cache=True) == " Exact OCR Text"
+    assert scorer.image_text(second, cache=True) == " Exact OCR Text"
+    assert len(calls) == 1
+    second.write_bytes(b"changed image")
+    scorer.image_text(second, cache=True)
+    assert len(calls) == 2
+    scorer.image_text(first)
+    assert len(calls) == 3  # Generated images still get fresh OCR.
+    monkeypatch.setattr(scorer, "ocr_cache_profile", lambda *args: "profile-b")
+    scorer.image_text(first, cache=True)
+    assert len(calls) == 4
+    monkeypatch.setenv("I2C_OCR_CACHE", "0")
+    scorer.image_text(first, cache=True)
+    assert len(calls) == 5
+
+
+@pytest.mark.parametrize("text", ["", " Hello"])
+def test_corrupt_reference_cache_is_recomputed(tmp_path, monkeypatch, text):
+    monkeypatch.setattr(scorer, "MODEL_CACHE", tmp_path / "models")
+    monkeypatch.setattr(scorer, "ocr_cache_profile", lambda *args: "profile")
+    calls = []
+    monkeypatch.setattr(scorer, "_image_text", lambda _: calls.append(1) or text)
+    image = tmp_path / "image.png"
+    image.write_bytes(b"PNG")
+    assert scorer.image_text(image, cache=True) == text
+    cache = next((tmp_path / "models/ocr-text").glob("*/*.json"))
+    cache.write_text("invalid json")
+    assert scorer.image_text(image, cache=True) == text
+    assert scorer.image_text(image, cache=True) == text
+    assert len(calls) == 2
+
+
+def test_reference_ocr_cache_falls_back_when_unwritable(tmp_path, monkeypatch):
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x")
+    monkeypatch.setattr(scorer, "MODEL_CACHE", blocker)
+    monkeypatch.setattr(scorer, "ocr_cache_profile", lambda *args: "profile")
+    monkeypatch.setattr(scorer, "_image_text", lambda _: " text")
+    assert scorer.image_text(blocker, cache=True) == " text"
+
+
+def test_workers_share_one_reference_ocr_computation(tmp_path, monkeypatch):
+    monkeypatch.setattr(scorer, "MODEL_CACHE", tmp_path / "models")
+    monkeypatch.setattr(scorer, "ocr_cache_profile", lambda *args: "profile")
+    count = tmp_path / "calls"
+    image = tmp_path / "image.png"
+    image.write_bytes(b"PNG")
+
+    def compute(_):
+        with count.open("a") as stream:
+            stream.write("computed\n")
+        return " same text"
+
+    monkeypatch.setattr(scorer, "_image_text", compute)
+    context = multiprocessing.get_context("fork")
+    processes = [context.Process(target=scorer.image_text, args=(image,), kwargs={"cache": True}) for _ in range(3)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(10)
+        assert process.exitcode == 0
+    assert count.read_text() == "computed\n"
+
+
+def test_ocr_profile_invalidates_for_weights_versions_threads_and_source(tmp_path, monkeypatch):
+    source = tmp_path / "scorer.py"
+    source.write_text("source-v1")
+    weights = tmp_path / "easyocr"
+    weights.mkdir()
+    checkpoint = weights / "english_g2.pth"
+    checkpoint.write_bytes(b"weights-v1")
+    monkeypatch.setattr(scorer, "__file__", str(source))
+    monkeypatch.setattr(scorer.importlib.metadata, "version", lambda _: "version-1")
+
+    def fingerprint(threads="2"):
+        scorer.ocr_cache_profile.cache_clear()
+        return scorer.ocr_cache_profile(tmp_path, threads)
+
+    initial = fingerprint()
+    checkpoint.write_bytes(b"weights-v2")
+    changed_weights = fingerprint()
+    assert changed_weights != initial
+    assert fingerprint("4") != changed_weights
+    monkeypatch.setattr(scorer.importlib.metadata, "version", lambda _: "version-2")
+    changed_version = fingerprint()
+    assert changed_version != changed_weights
+    source.write_text("source-v2")
+    assert fingerprint() != changed_version
+    scorer.ocr_cache_profile.cache_clear()

@@ -236,7 +236,7 @@ async def test_render_sandbox_never_receives_reference_images(agent, body, monke
     )
     monkeypatch.setattr(Interaction2CodeAgent, "_start_sandbox", AsyncMock(return_value=sandbox))
     score = AsyncMock(return_value={"reward": 0.75, "status": "ok"})
-    monkeypatch.setattr("responses_api_agents.interaction2code_agent.app.score", score)
+    monkeypatch.setattr("responses_api_agents.interaction2code_agent.app.ScorerPool.score", score)
     if case in {"provider", "browser", "unsafe"}:
         with pytest.raises((RuntimeError, ValueError)):
             await agent._grade(directory, tmp_path, {"width": 1280, "height": 720})
@@ -285,3 +285,100 @@ async def test_input_integrity_audit_preserves_evidence_without_uploads(agent, b
     sandbox.upload.assert_not_awaited()
     sandbox.exec.assert_awaited_once()
     assert sandbox.exec.await_args.args[0].startswith("sha256sum ")
+
+
+@pytest.mark.asyncio
+async def test_server_shutdown_closes_persistent_scorer_pool(agent, monkeypatch):
+    from fastapi import FastAPI
+
+    from responses_api_agents.opencode_sandboxed_agent.app import OpenCodeSandboxedAgent
+
+    monkeypatch.setattr(OpenCodeSandboxedAgent, "setup_webserver", lambda self: FastAPI())
+    pool = agent._get_scorer_pool()
+    assert agent._get_scorer_pool() is pool
+    close = AsyncMock()
+    monkeypatch.setattr(pool, "close", close)
+    app = agent.setup_webserver()
+    with pytest.raises(ValueError, match="request failed"):
+        async with app.router.lifespan_context(app):
+            raise ValueError("request failed")
+    close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["ok", "raw_html", "truncated", "refusal", "provider", "tools"])
+async def test_single_turn_calls_model_once_and_only_verifies_returned_html(agent, body, monkeypatch, case):
+    agent.config.agent_mode = "single_turn"
+    agent.config.model_server = SimpleNamespace(name="policy_model")
+    html = '<html><body><button id="interact1">Open</button></body></html>'
+    text = "```html\n" + html + "\n```"
+    if case == "raw_html":
+        text = html
+    if case == "refusal":
+        text = "I cannot produce the page."
+    chat = {
+        "id": "chat-single",
+        "created": 0,
+        "model": "kimi",
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "length" if case == "truncated" else "stop",
+                "message": {"role": "assistant", "content": text, "reasoning_content": "Reasoning is not HTML."},
+            }
+        ],
+    }
+    if case == "tools":
+        chat["choices"][0]["message"]["tool_calls"] = [
+            {"id": "call-unexpected", "type": "function", "function": {"name": "shell", "arguments": "{}"}}
+        ]
+        chat["choices"][0]["finish_reason"] = "tool_calls"
+    post = AsyncMock(return_value=SimpleNamespace(ok=True, read=AsyncMock(return_value=json.dumps(chat).encode())))
+    if case == "provider":
+        post.side_effect = RuntimeError("endpoint unavailable")
+    agent.server_client.post = post
+    start = AsyncMock()
+    monkeypatch.setattr(Interaction2CodeAgent, "_start_sandbox", start)
+    grade = AsyncMock(return_value={"reward": 0.7, "status": "ok", "interaction_flag": True})
+    monkeypatch.setattr(Interaction2CodeAgent, "_grade", grade)
+    request = Request({"type": "http", "headers": [], "session": {SESSION_ID_KEY: "session"}})
+    result = await agent.run(request, body)
+    assert result.agent_mode == "single_turn"
+    assert result.opencode_execution == {}
+    post.assert_awaited_once()
+    start.assert_not_awaited()  # Only the real verifier (mocked here) creates a sandbox.
+    if case == "ok":
+        assert result.reward == 0.7
+        assert (Path(result.artifact_dir) / "index.html").read_text() == html + "\n"
+        grade.assert_awaited_once()
+        effective = result.model_dump()["responses_create_params"]
+        assert [message["role"] for message in effective["input"]] == ["system", "user"]
+        assert (
+            effective == json.loads((Path(result.artifact_dir) / "input.json").read_text())["responses_create_params"]
+        )
+    else:
+        grade.assert_not_awaited()
+        assert result.status == (
+            "context_limit"
+            if case == "truncated"
+            else "infrastructure_error"
+            if case == "provider"
+            else "agent_error"
+            if case == "tools"
+            else "missing_html"
+        )
+        assert result.mask_sample == (case == "provider")
+    if case != "provider":
+        params = json.loads((Path(result.artifact_dir) / "model_request.json").read_text())
+        assert [m["role"] for m in params["messages"]] == ["system", "user"]
+        assert not params.get("tools") and params["tool_choice"] == "none"
+        assert "Reasoning is not HTML." not in (Path(result.artifact_dir) / "assistant_response.txt").read_text()
+    assert not agent._sandbox_id_to_sandbox
+
+
+def test_opencode_is_default_and_unknown_modes_are_rejected():
+    assert Interaction2CodeConfig.model_fields["agent_mode"].default == "opencode"
+    with pytest.raises(ValidationError) as error:
+        Interaction2CodeConfig.model_validate({"agent_mode": "unknown"})
+    assert any(item["loc"] == ("agent_mode",) and item["type"] == "literal_error" for item in error.value.errors())

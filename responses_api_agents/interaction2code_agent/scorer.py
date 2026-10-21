@@ -11,8 +11,12 @@ import argparse
 import contextlib
 import fcntl
 import functools
+import hashlib
+import importlib.metadata
 import json
+import logging
 import os
+import platform
 import re
 import subprocess
 import tempfile
@@ -24,6 +28,9 @@ import numpy as np
 from nltk.translate.bleu_score import sentence_bleu
 from PIL import Image
 from skimage.metrics import structural_similarity
+
+
+LOG = logging.getLogger(__name__)
 
 
 MODEL_CACHE = Path(os.environ.get("I2C_MODEL_CACHE", Path.home() / ".cache/interaction2code"))
@@ -99,16 +106,71 @@ def ssim_similarity(first: Path, second: Path) -> float:
     return float(structural_similarity(image1, resized, full=True)[0])
 
 
-def image_text(path: Path) -> str:
-    """Concatenate OCR detections with upstream's leading space."""
+@functools.lru_cache(maxsize=8)
+def ocr_cache_profile(model_cache: Path, threads: str) -> str:
+    """Invalidate cached text when scorer code, dependencies, or weights change."""
+    digest = hashlib.sha256(Path(__file__).read_bytes())
+    digest.update((platform.machine() + threads).encode())
+    for package in ("easyocr", "torch", "torchvision", "numpy", "Pillow", "opencv-python-headless"):
+        try:
+            version = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            version = "missing"
+        digest.update((package + version).encode())
+    for path in sorted((model_cache / "easyocr").glob("*.pth")):
+        digest.update(path.name.encode())
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _image_text(path: Path) -> str:
     with Image.open(path) as image:
         detections = ocr_reader().readtext(np.array(image))
     return "".join(" " + text for _, text, _ in detections)
 
 
+def image_text(path: Path, *, cache: bool = False) -> str:
+    """Reuse reference OCR by content hash, preserving exact native OCR strings."""
+    if not cache or os.environ.get("I2C_OCR_CACHE", "1") == "0":
+        return _image_text(path)
+    profile = ocr_cache_profile(MODEL_CACHE, os.environ.get("I2C_SCORING_THREADS", "2"))
+    key = hashlib.sha256(profile.encode() + path.read_bytes()).hexdigest()
+    directory = MODEL_CACHE / "ocr-text" / key[:2]
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        lock = (directory / (key + ".lock")).open("a")
+    except OSError:
+        LOG.warning("Reference OCR cache unavailable; computing directly", exc_info=True)
+        return _image_text(path)
+    with lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        destination = directory / (key + ".json")
+        try:
+            cached = json.loads(destination.read_text())
+            if isinstance(cached.get("text"), str):
+                return cached["text"]
+        except (OSError, ValueError, AttributeError):
+            pass
+        text = _image_text(path)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump({"text": text}, stream)
+            os.replace(temporary, destination)
+        except OSError:
+            LOG.warning("Could not publish reference OCR cache", exc_info=True)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return text
+
+
 def text_similarity(first: Path, second: Path) -> float | None:
     """Preserve character BLEU and upstream's null for one-sided empty OCR."""
-    reference, candidate = image_text(first), image_text(second)
+    reference, candidate = image_text(first, cache=True), image_text(second)
     if reference and candidate:
         return float(sentence_bleu([reference], candidate))
     return 1.0 if not reference and not candidate else None

@@ -31,8 +31,8 @@ sbatch -A YOUR_ACCOUNT benchmarks/interaction2code/scripts/run-interaction2code.
 
 The GPU job uses partition `batch`, QoS `interactive`, TP=4, 131072 context,
 64 coding episodes, 64 vLLM sequences, 8192 batched tokens, 0.85 GPU memory
-utilization, and CUDA graph captures `[1,2,4,8,16,32,48,64]`. It runs eight CPU
-scoring processes with two threads each. Up to 32 images per model request allow
+utilization, and CUDA graph captures `[1,2,4,8,16,32,48,64]`. It runs up to eight persistent CPU
+scoring workers with two threads each; CLIP and EasyOCR stay loaded between tasks. Up to 32 images per model request allow
 reference pairs and repeated visual feedback to remain in conversation history. Browser verification runs in a fresh
 sandbox with no reference annotations. The serving model is released when the
 job ends; all native metrics are calculated during rollout collection.
@@ -64,7 +64,9 @@ python benchmarks/interaction2code/runtime/check_sandbox.py /path/browser.sqsh /
 ## Hosted Kimi CPU smoke tests
 
 The hosted launcher requires no serving image, checkpoint, or local GPU. It reuses the
-browser/OpenCode image and existing CPU scorer runtime. Set the dataset, task image,
+browser/OpenCode image and existing CPU scorer runtime. Up to two persistent
+scoring workers retain CLIP and EasyOCR across tasks; each worker initializes
+its models on its first scoring request. Set the dataset, task image,
 and scorer variables above, then authenticate through `WEBARENA_JUDGE_API_KEY` in the
 job environment (or your `.bashrc`). The key is resolved from the environment and is
 not written to the saved configuration.
@@ -112,3 +114,41 @@ HTML mutation (`post_feedback_html_revision`), and at least two inspected rounds
 an intervening revision (`visual_feedback_verified`). A task may score well while
 stopping after one preview; the audit records that behavior rather than treating the
 model's final claim as evidence of another round.
+
+## CPU scoring controls
+
+Both launchers accept `I2C_SCORING_CONCURRENCY` (persistent worker count) and
+`I2C_SCORING_THREADS` (PyTorch threads per worker). Defaults remain 8 workers for
+local-vLLM jobs, 2 for hosted CPU jobs, and 2 threads per worker. Budget CPU cores
+and RAM for these workers alongside the training or generation processes.
+
+Reference OCR results are cached across tasks and runs using image-content,
+scorer, dependency, model-weight, and thread-setting fingerprints. The cache does
+not reuse OCR for newly generated images. No image resizing, recognition setting,
+metric formula, or GPU OCR is introduced. `I2C_OCR_CACHE=0` disables reference OCR
+reuse for validation. The first cache population still needs both reference passes.
+
+## Single-turn or OpenCode generation
+
+Both launchers accept `--agent-mode opencode|single_turn` after the positional
+arguments. The default is `opencode`. `I2C_AGENT_MODE` can also set the mode;
+an explicit flag takes precedence. For the same ten sampled tasks on hosted Kimi:
+
+```bash
+sbatch -A YOUR_ACCOUNT benchmarks/interaction2code/scripts/run-interaction2code-hosted-cpu.slurm \
+  "$PWD" /path/single-turn-test /path/ten-sampled-inputs.jsonl 10 1 \
+  --agent-mode single_turn
+```
+
+The local-vLLM launcher accepts the same flag. Single-turn mode sends two screenshot
+images with one system and one user message, with no tools or iterative feedback.
+It extracts the complete HTML from the assistant's fenced code block and runs the
+same independent browser verification and native scoring. There is no starting
+script for Interaction2Code; the model reconstructs the page from the screenshots.
+
+`I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS` controls the single response budget (default
+32768). Selected single-turn inputs are materialized with the actual multimodal
+prompt; `single_turn_prompt.json` records its text template. Each rollout reports
+`agent_mode`. A single-turn run's resume settings include its mode, output budget,
+and prompt fingerprint, so changing those requires a new output directory.
+Existing OpenCode outputs remain resumable with the default mode.

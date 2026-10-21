@@ -15,9 +15,23 @@ set -euo pipefail
 repo="$(realpath "${1:?Pass your Gym checkout}")"
 output="$(realpath -m "${2:?Pass an output directory (reuse it to resume)}")"
 input="$(realpath "${3:?Pass a prepared task JSONL}")"
-limit="${4:-10}"
-repeats="${5:-1}"
-(( $# <= 5 )) || { echo "Pass checkout, output, input, optional limit and repeats." >&2; exit 1; }
+shift 3
+limit=10
+repeats=1
+if (( $# )) && [[ "$1" != --* ]]; then limit="$1"; shift; fi
+if (( $# )) && [[ "$1" != --* ]]; then repeats="$1"; shift; fi
+agent_mode="${I2C_AGENT_MODE:-opencode}"
+while (( $# )); do
+    case "$1" in
+        --agent-mode) agent_mode="${2:?Pass opencode or single_turn}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+[[ "$agent_mode" == opencode || "$agent_mode" == single_turn ]] || {
+    echo 'Agent mode must be opencode or single_turn' >&2; exit 1
+}
+export I2C_AGENT_MODE="$agent_mode"
+export I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS="${I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS:-32768}"
 [[ "$limit" =~ ^[0-9]+$ && "$repeats" =~ ^[1-9][0-9]*$ ]] || {
     echo 'Limit must be nonnegative; repeats must be positive.' >&2
     exit 1
@@ -37,6 +51,8 @@ if [[ -z "${WEBARENA_JUDGE_API_KEY:-}" ]]; then
 fi
 : "${WEBARENA_JUDGE_API_KEY:?Export the hosted endpoint API key}"
 export WEBARENA_JUDGE_API_KEY
+# Keep an explicit CLI selection even when .bashrc also sets a default mode.
+export I2C_AGENT_MODE="$agent_mode"
 export I2C_POLICY_BASE_URL="${I2C_POLICY_BASE_URL:-https://inference-api.nvidia.com/v1}"
 export I2C_POLICY_MODEL="${I2C_POLICY_MODEL:-nvidia/moonshotai/kimi-k3}"
 export I2C_OPENCODE_STEPS="${I2C_OPENCODE_STEPS:-50}"
@@ -85,6 +101,7 @@ import socket
 import sys
 from pathlib import Path
 from benchmarks.interaction2code.prepare import PROTOCOL
+from responses_api_agents.interaction2code_agent.single_turn import SYSTEM_PROMPT, USER_INSTRUCTIONS, build_request
 
 repo, output, scratch, data, source = map(Path, sys.argv[1:6])
 limit, head_port = map(int, sys.argv[6:8])
@@ -103,6 +120,12 @@ with source.open() as stream:
 rows = rows[:limit] if limit else rows
 if not rows:
     raise ValueError("No tasks selected")
+if os.environ["I2C_AGENT_MODE"] == "single_turn":
+    for row in rows:
+        row["responses_create_params"] = build_request(
+            data / "tasks" / row["task_id"],
+            max_output_tokens=int(os.environ["I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS"]),
+        ).model_dump(exclude_none=True)
 selected = "".join(json.dumps(row) + "\n" for row in rows)
 input_path = output / "input.jsonl"
 if input_path.exists() and input_path.read_text() != selected:
@@ -113,6 +136,12 @@ settings = {"num_repeats": repeats, "model": policy_model, "endpoint": os.enviro
 opencode_steps = int(os.environ["I2C_OPENCODE_STEPS"])
 if opencode_steps != 50:
     settings["opencode_steps"] = opencode_steps
+if os.environ["I2C_AGENT_MODE"] != "opencode":
+    import hashlib
+    settings["agent_mode"] = os.environ["I2C_AGENT_MODE"]
+    settings["single_turn_max_output_tokens"] = int(os.environ["I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS"])
+    settings["single_turn_prompt_sha256"] = hashlib.sha256((SYSTEM_PROMPT + USER_INSTRUCTIONS).encode()).hexdigest()
+    (output / "single_turn_prompt.json").write_text(json.dumps({"system": SYSTEM_PROMPT, "user": USER_INSTRUCTIONS}, indent=2) + "\n")
 if settings_path.exists():
     if json.loads(settings_path.read_text()) != settings:
         raise ValueError("Resume requires the same repeat count, model, capture settings and dataset; use a new output directory")
@@ -143,12 +172,14 @@ config = {
     "head_server": {"host": "127.0.0.1", "port": head_port},
     "model_endpoint_readiness_timeout_seconds": 1800,
     "interaction2code_agent": {"responses_api_agents": {"interaction2code_agent": {
+        "agent_mode": os.environ["I2C_AGENT_MODE"],
+        "single_turn_max_output_tokens": int(os.environ["I2C_SINGLE_TURN_MAX_OUTPUT_TOKENS"]),
         "dataset_root": str(data),
         "results_dir": str(output / "artifacts"),
         "artifacts_dir": str(output / "opencode"),
         "runtime_root": str(Path(os.environ["I2C_SCORER_ROOT"]).resolve()),
-        "scoring_concurrency": 2,
-        "scoring_threads": 2,
+        "scoring_concurrency": int(os.environ.get("I2C_SCORING_CONCURRENCY", "2")),
+        "scoring_threads": int(os.environ.get("I2C_SCORING_THREADS", "2")),
         "scoring_timeout": 3600,
         "opencode_max_context_window": 131072,
         "output_token_policy": "fixed",

@@ -8,10 +8,12 @@ interaction2code_agent:
     interaction2code_agent:
       entrypoint: app.py
       domain: agent
-      description: Interactive webpage reconstruction with OpenCode and native Interaction2Code metrics
+      description: Interactive webpage reconstruction with OpenCode or single-turn generation and native metrics
       model_server:
         type: responses_api_models
         name: policy_model
+      agent_mode: opencode
+      single_turn_max_output_tokens: 32768
       concurrency: 64
       scoring_concurrency: 2
       scoring_threads: 2

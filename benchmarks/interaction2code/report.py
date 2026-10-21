@@ -12,6 +12,7 @@ from statistics import mean
 def read_rows(path: Path) -> list[dict]:
     """Stream the fields needed for reporting, excluding large captured histories."""
     fields = (
+        "agent_mode",
         "page_id",
         "interaction_id",
         "mask_sample",
@@ -67,6 +68,7 @@ def report(*, inputs: Path, rollouts: Path) -> dict:
             }
     return {
         "protocol": "interaction2code-opencode",
+        "agent_modes": dict(Counter(row.get("agent_mode", "opencode") for row in rows)),
         "expected_tasks": len(expected),
         "returned_rows": len(rows),
         "evaluated_rows": len(evaluated),
